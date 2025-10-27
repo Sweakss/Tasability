@@ -14,10 +14,10 @@ A lot of small updates I forgot
 
 
 
-AHKConnection is required to do mouse scroll inputs
+AHKConnection is required to do mouse scroll inputs and key inputs.
 
 Get AHKConnection here: https://github.com/plusgiant5/Libraries/raw/d96e61f24d2439f0f9405087054f169e5a50e1c4/AHKConnection/AHKConnection.exe
-If you dont trust the exe, compile it yourself: https://raw.githubusercontent.com/plusgiant5/Libraries/main/AHKConnection/AHKConnection.ahk
+If you dont trust the exe, compile it yourself: https://raw.githubusercontent.com/Sweakss/Tasability/refs/heads/main/AHKConnection.ahk
 
 AHKConnection does not work well unless compiled
 ]]
@@ -113,6 +113,7 @@ local DefaultJumpPower = nil
 local DefaultWalkSpeed = nil
 local Resolution = nil
 local ConsoleMessage = print
+local currentFrame = nil
 -----------------------------
 local Reading = false
 local Writing = false
@@ -142,6 +143,7 @@ local Dead = false -- If the player is dead this is true
 local CameraCFrame = workspace.CurrentCamera.CFrame -- Used when reading so that nothing else can change the camera's CFrame
 local Pressed = {} -- Current keys that are pressed
 local IgnoreGameProcessed = false -- To ignore GameProcessed in InputBegan, InputChanged, InputEnded
+local frameKeys = {}
 
 -- Tasability update
 local Frozen = false
@@ -2509,51 +2511,95 @@ spawn(function() -- Reading but with RenderStepped to remove some delay on clien
 	end
 end)
 
-spawn(function() -- Writing
-	while true do
-		--print(currentAnimSpeed)
-		--print(GetShiftLockEnabled())
-		--table.foreach(InputEndedQueue,print)
-		--print(GetZoom())
-		if Writing then
-			if (not Character or not Character.Parent) or (not Character:FindFirstChild("HumanoidRootPart")) then
-				if type(RecordingTable[#RecordingTable]) == "table" then
-					table.insert(RecordingTable,0) -- Voided
-				end
-				RunService.RenderStepped:Wait()
-				continue
-			end
-			if (Humanoid.Health == 0) then
-				if type(RecordingTable[#RecordingTable]) == "table" then
-					table.insert(RecordingTable,1) -- Dead
-				end
-				RunService.RenderStepped:Wait()
-				continue
-			end
-			local Frame = {}
-			Frame[1] = RoundTable(CFrameToTable(Character.HumanoidRootPart.CFrame),RoundDigits)
-			Frame[2] = AnimationQueue
-			Frame[3] = RoundNumber(currentAnimSpeed,RoundDigits)
-			Frame[4] = Humanoid:GetState().Value
-			Frame[5] = RoundTable(Vector3ToTable(Character.HumanoidRootPart.Velocity),RoundDigits)
-			Frame[6] = RoundTable(Vector3ToTable(Character.HumanoidRootPart.RotVelocity),RoundDigits)
-			Frame[7] = RoundTable(CFrameToTable(workspace.CurrentCamera.CFrame),RoundDigits)
-			Frame[8] = RoundNumber(GetZoom(),RoundDigits)
-			Frame[9] = pose
-			Frame[10] = (GetShiftLockEnabled() and 1) or 0
-			Frame[11] = RoundTable(Vector2ToTable(UserInputService:GetMouseLocation()),RoundDigits)
-			Frame[12] = {InputBeganQueue,InputEndedQueue}
-			table.insert(RecordingTable,Frame)
-		end
-		AnimationQueue = {}
-		RunSpeed = 0
-		ClimbSpeed = 0
-		HumanoidStateQueue = {}
-		if setfpscap then
-			setfpscap(60)
-		end
-		RunService.RenderStepped:Wait()
-	end
+spawn(function()
+    while true do
+        if Writing then
+            if (not Character or not Character.Parent) or (not Character:FindFirstChild("HumanoidRootPart")) then
+                if type(RecordingTable[#RecordingTable]) == "table" then
+                    table.insert(RecordingTable, 0)
+                end
+                RunService.RenderStepped:Wait()
+                continue
+            end
+            if (Humanoid.Health == 0) then
+                if type(RecordingTable[#RecordingTable]) == "table" then
+                    table.insert(RecordingTable, 1)
+                end
+                RunService.RenderStepped:Wait()
+                continue
+            end
+
+            local Frame = {}
+            Frame[1] = RoundTable(CFrameToTable(Character.HumanoidRootPart.CFrame), RoundDigits)
+            Frame[2] = AnimationQueue
+            Frame[3] = RoundNumber(currentAnimSpeed, RoundDigits)
+            Frame[4] = Humanoid:GetState().Value
+            Frame[5] = RoundTable(Vector3ToTable(Character.HumanoidRootPart.Velocity), RoundDigits)
+            Frame[6] = RoundTable(Vector3ToTable(Character.HumanoidRootPart.RotVelocity), RoundDigits)
+            Frame[7] = RoundTable(CFrameToTable(workspace.CurrentCamera.CFrame), RoundDigits)
+            Frame[8] = RoundNumber(GetZoom(), RoundDigits)
+            Frame[9] = pose
+            Frame[10] = (GetShiftLockEnabled() and 1) or 0
+            Frame[11] = RoundTable(Vector2ToTable(UserInputService:GetMouseLocation()), RoundDigits)
+            Frame[12] = {InputBeganQueue, InputEndedQueue}
+
+            table.insert(RecordingTable, Frame)
+
+            local currentFrame = #RecordingTable
+            local keysPressedThisFrame = {}
+            local trackedKeys = { W = true, A = true, S = true, D = true, Space = true, LeftShift = true }
+            for key, _ in pairs(Pressed) do
+                if trackedKeys[key] then
+                    keysPressedThisFrame[#keysPressedThisFrame + 1] = key
+                end
+            end
+
+            if #keysPressedThisFrame > 0 then
+                if frameKeys ~= nil then
+                    frameKeys[currentFrame] = keysPressedThisFrame
+                end
+
+                local token = "[" .. table.concat(keysPressedThisFrame, ",") .. "]"
+                local requestPath = AHKConnectionRequestPath or "Replayability+_AHK/Request"
+                local requestFolder = requestPath:match("^(.*)/") or "Replayability+_AHK"
+
+                if type(isfolder) == "function" and type(makefolder) == "function" then
+                    local ok, exists = pcall(isfolder, requestFolder)
+                    if ok and not exists then
+                        pcall(makefolder, requestFolder)
+                    end
+                else
+                    pcall(function() if makefolder then makefolder(requestFolder) end end)
+                end
+
+                if type(appendfile) == "function" then
+                    local ok, existing = pcall(readfile, requestPath)
+                    if ok and existing and #existing > 0 then
+                        pcall(appendfile, requestPath, "," .. token)
+                    else
+                        pcall(writefile, requestPath, token)
+                    end
+                else
+                    local ok, existing = pcall(readfile, requestPath)
+                    if not ok or not existing or #existing == 0 then
+                        pcall(writefile, requestPath, token)
+                    else
+                        pcall(writefile, requestPath, existing .. "," .. token)
+                    end
+                end
+            end
+        end
+
+        AnimationQueue = {}
+        RunSpeed = 0
+        ClimbSpeed = 0
+        HumanoidStateQueue = {}
+        if setfpscap then
+            setfpscap(60)
+        end
+
+        RunService.RenderStepped:Wait()
+    end
 end)
 
 -- Clear input queues
